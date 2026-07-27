@@ -187,6 +187,11 @@
         <option value="agotado">Agotado</option>
       </select>
     </div>
+    <div class="barra-superior">
+      <select id="filtroUbicacion">
+        <option value="">Ubicación: todas</option>
+      </select>
+    </div>
     <div class="contador-filtro" id="contadorFiltro"></div>
     <div id="listaItems"></div>
   </section>
@@ -232,10 +237,12 @@
       <h2 id="tituloForm">Nuevo ítem</h2>
 
       <label>Ítem</label>
-      <input type="text" id="f-item" placeholder="Ej. Guante de protección mecánica">
+      <select id="f-item-select"></select>
+      <input type="text" id="f-item-otro" placeholder="Escribe el nuevo ítem" style="display:none; margin-top:6px;">
 
       <label>Marca / Detalle</label>
-      <input type="text" id="f-marca" placeholder="Ej. 3M Comfort Grip">
+      <select id="f-marca-select"></select>
+      <input type="text" id="f-marca-otro" placeholder="Escribe la nueva marca/detalle" style="display:none; margin-top:6px;">
 
       <label>Categoría EPP</label>
       <select id="f-categoria">
@@ -253,13 +260,16 @@
       <input type="number" id="f-stockmin" min="0" step="1" value="0">
 
       <label>Talla</label>
-      <input type="text" id="f-talla" placeholder="Ej. M, 42, única">
+      <select id="f-talla-select"></select>
+      <input type="text" id="f-talla-otro" placeholder="Escribe la nueva talla" style="display:none; margin-top:6px;">
 
       <label>Formato</label>
-      <input type="text" id="f-formato" placeholder="Ej. Par, unidad, caja x50">
+      <select id="f-formato-select"></select>
+      <input type="text" id="f-formato-otro" placeholder="Escribe el nuevo formato" style="display:none; margin-top:6px;">
 
       <label>Ubicación</label>
-      <input type="text" id="f-ubicacion" placeholder="Ej. Bodega Hangar 135">
+      <select id="f-ubicacion-select"></select>
+      <input type="text" id="f-ubicacion-otro" placeholder="Escribe la nueva ubicación" style="display:none; margin-top:6px;">
 
       <label>Vencimiento / vida útil del EPP (opcional)</label>
       <input type="date" id="f-vencimiento">
@@ -349,11 +359,22 @@
   const CLAVE_ITEMS = 'inv-epp-items';
   const CLAVE_DOCS  = 'inv-epp-docs';
   const CLAVE_CFG   = 'inv-epp-cfg';
+  const CLAVE_CAT   = 'inv-epp-catalogos';
 
   let items = cargarJSON(CLAVE_ITEMS, []);
   // documentos[idItem] = { Certificado:{NombreArchivo,LinkDrive,FechaVencimiento}, FichaTecnica:{NombreArchivo,LinkDrive} }
   let documentos = cargarJSON(CLAVE_DOCS, {});
   let config = cargarJSON(CLAVE_CFG, { url:'', correos:'' });
+  // catalogosLocal[tipo] = [valores...]; se autocompletan con el uso ("+ Otro").
+  let catalogosLocal = cargarJSON(CLAVE_CAT, {
+    Ubicacion: ['Bodega APR', 'Estación de emergencia'],
+    Formato: ['Par', 'Unidad'],
+    Talla: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+    Item: [],
+    Marca: []
+  });
+
+  const ETIQUETAS_CATALOGO = { Item:'Ítem', Marca:'Marca/Detalle', Ubicacion:'Ubicación', Formato:'Formato', Talla:'Talla' };
 
   let idDetalleActual = null;
 
@@ -367,6 +388,7 @@
     localStorage.setItem(CLAVE_ITEMS, JSON.stringify(items));
     localStorage.setItem(CLAVE_DOCS, JSON.stringify(documentos));
     localStorage.setItem(CLAVE_CFG, JSON.stringify(config));
+    localStorage.setItem(CLAVE_CAT, JSON.stringify(catalogosLocal));
   }
 
   function generarId(){
@@ -456,6 +478,7 @@
     const buscar = document.getElementById('buscador').value.trim().toLowerCase();
     const filtroCat = document.getElementById('filtroCategoria').value;
     const filtroEstado = document.getElementById('filtroEstado').value;
+    const filtroUbic = document.getElementById('filtroUbicacion').value;
 
     let filtrados = items.filter(it => {
       if (buscar) {
@@ -464,6 +487,7 @@
       }
       if (filtroCat && it.Categoria !== filtroCat) return false;
       if (filtroEstado && estadoStock(it) !== filtroEstado) return false;
+      if (filtroUbic && it.Ubicacion !== filtroUbic) return false;
       return true;
     });
 
@@ -559,10 +583,105 @@
   });
 
   // ---------------------------------------------------------------------
+  // Catálogos (combos "+ Otro" para Item, Marca, Ubicación, Formato, Talla)
+  // ---------------------------------------------------------------------
+  const CAMPOS_CATALOGO = [
+    { tipo:'Item',      idSelect:'f-item-select',      idOtro:'f-item-otro' },
+    { tipo:'Marca',     idSelect:'f-marca-select',     idOtro:'f-marca-otro' },
+    { tipo:'Talla',     idSelect:'f-talla-select',     idOtro:'f-talla-otro' },
+    { tipo:'Formato',   idSelect:'f-formato-select',   idOtro:'f-formato-otro' },
+    { tipo:'Ubicacion', idSelect:'f-ubicacion-select', idOtro:'f-ubicacion-otro' }
+  ];
+
+  function poblarSelectCatalogo(idSelect, tipo, valorActual){
+    const select = document.getElementById(idSelect);
+    select.innerHTML = '';
+
+    let catalogo = (catalogosLocal[tipo] || []).slice().sort((a,b) => a.localeCompare(b));
+    // Si el valor actual no está en el catálogo (dato antiguo o de otro
+    // dispositivo aún no sincronizado), se agrega para no perderlo al editar.
+    if (valorActual && !catalogo.some(v => v.toLowerCase() === valorActual.toLowerCase())) {
+      catalogo.unshift(valorActual);
+    }
+
+    const optVacia = document.createElement('option');
+    optVacia.value = ''; optVacia.textContent = 'Selecciona…';
+    select.appendChild(optVacia);
+
+    catalogo.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      select.appendChild(opt);
+    });
+
+    const optOtro = document.createElement('option');
+    optOtro.value = '__otro__'; optOtro.textContent = '+ Otro…';
+    select.appendChild(optOtro);
+
+    select.value = valorActual || '';
+  }
+
+  function poblarTodosLosCatalogos(valores){
+    CAMPOS_CATALOGO.forEach(c => {
+      poblarSelectCatalogo(c.idSelect, c.tipo, (valores && valores[c.tipo]) || '');
+      document.getElementById(c.idOtro).style.display = 'none';
+      document.getElementById(c.idOtro).value = '';
+    });
+  }
+
+  CAMPOS_CATALOGO.forEach(c => {
+    document.getElementById(c.idSelect).addEventListener('change', () => {
+      const esOtro = document.getElementById(c.idSelect).value === '__otro__';
+      const otro = document.getElementById(c.idOtro);
+      otro.style.display = esOtro ? 'block' : 'none';
+      if(esOtro) otro.focus(); else otro.value = '';
+    });
+  });
+
+  async function agregarValorCatalogo(tipo, valor){
+    if(!catalogosLocal[tipo]) catalogosLocal[tipo] = [];
+    if(!catalogosLocal[tipo].some(v => v.toLowerCase() === valor.toLowerCase())){
+      catalogosLocal[tipo].push(valor);
+      guardarLocal();
+    }
+    if(config.url){
+      try{
+        await fetch(config.url, { method:'POST', body: JSON.stringify({ accion:'agregarValorCatalogo', tipo, valor }) });
+      }catch(e){ /* queda igual guardado local; se reintentará en la próxima sincronización general */ }
+    }
+  }
+
+  /** Lee el valor elegido (catálogo u "otro"); si es "otro" y tiene contenido,
+   *  ofrece agregarlo al catálogo para reutilizarlo después. */
+  async function resolverCampoCatalogo(tipo, idSelect, idOtro){
+    const select = document.getElementById(idSelect);
+    const esOtro = select.value === '__otro__';
+    const valor = (esOtro ? document.getElementById(idOtro).value : select.value).trim();
+    if(esOtro && valor){
+      const agregar = confirm('¿Agregar "' + valor + '" al catálogo de ' + ETIQUETAS_CATALOGO[tipo] + ' para no tener que escribirlo de nuevo?');
+      if(agregar) await agregarValorCatalogo(tipo, valor);
+    }
+    return valor;
+  }
+
+  function poblarFiltroUbicacion(){
+    const select = document.getElementById('filtroUbicacion');
+    const valorPrevio = select.value;
+    select.innerHTML = '<option value="">Ubicación: todas</option>';
+    (catalogosLocal.Ubicacion || []).slice().sort((a,b) => a.localeCompare(b)).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      select.appendChild(opt);
+    });
+    select.value = valorPrevio;
+  }
+  document.getElementById('filtroUbicacion').addEventListener('change', renderLista);
+
+  // ---------------------------------------------------------------------
   // Formulario nuevo / editar
   // ---------------------------------------------------------------------
   function limpiarForm(){
-    ['f-id','f-item','f-marca','f-talla','f-formato','f-ubicacion','f-vencimiento','f-vencimiento-cert'].forEach(id => document.getElementById(id).value = '');
+    ['f-id','f-vencimiento','f-vencimiento-cert'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('f-categoria').value = '';
     document.getElementById('f-cantidad').value = 0;
     document.getElementById('f-stockmin').value = 0;
@@ -570,6 +689,7 @@
     document.getElementById('f-ficha').value = '';
     document.getElementById('adjuntoActualCert').innerHTML = '';
     document.getElementById('adjuntoActualFicha').innerHTML = '';
+    poblarTodosLosCatalogos(null);
   }
 
   function prepararFormNuevo(){
@@ -583,14 +703,13 @@
     limpiarForm();
     document.getElementById('tituloForm').textContent = 'Editar ítem';
     document.getElementById('f-id').value = it.ID;
-    document.getElementById('f-item').value = it.Item || '';
-    document.getElementById('f-marca').value = it['Marca/Detalle'] || '';
+    poblarTodosLosCatalogos({
+      Item: it.Item || '', Marca: it['Marca/Detalle'] || '', Talla: it.Talla || '',
+      Formato: it.Formato || '', Ubicacion: it.Ubicacion || ''
+    });
     document.getElementById('f-categoria').value = it.Categoria || '';
     document.getElementById('f-cantidad').value = Number(it.Cantidad)||0;
     document.getElementById('f-stockmin').value = Number(it.StockMinimo)||0;
-    document.getElementById('f-talla').value = it.Talla || '';
-    document.getElementById('f-formato').value = it.Formato || '';
-    document.getElementById('f-ubicacion').value = it.Ubicacion || '';
     document.getElementById('f-vencimiento').value = it.Vencimiento || '';
 
     const docs = documentos[id] || {};
@@ -606,8 +725,12 @@
   document.getElementById('btnCancelarForm').addEventListener('click', () => mostrarVista('lista'));
 
   document.getElementById('btnGuardarItem').addEventListener('click', async () => {
-    const nombreItem = document.getElementById('f-item').value.trim();
+    const nombreItem = await resolverCampoCatalogo('Item', 'f-item-select', 'f-item-otro');
     if(!nombreItem){ toast('El campo Ítem es obligatorio', 'error'); return; }
+    const marca = await resolverCampoCatalogo('Marca', 'f-marca-select', 'f-marca-otro');
+    const talla = await resolverCampoCatalogo('Talla', 'f-talla-select', 'f-talla-otro');
+    const formato = await resolverCampoCatalogo('Formato', 'f-formato-select', 'f-formato-otro');
+    const ubicacion = await resolverCampoCatalogo('Ubicacion', 'f-ubicacion-select', 'f-ubicacion-otro');
 
     let id = document.getElementById('f-id').value;
     const esNuevo = !id;
@@ -616,13 +739,13 @@
     const item = {
       ID: id,
       Item: nombreItem,
-      'Marca/Detalle': document.getElementById('f-marca').value.trim(),
+      'Marca/Detalle': marca,
       Categoria: document.getElementById('f-categoria').value,
       Cantidad: Number(document.getElementById('f-cantidad').value) || 0,
       StockMinimo: Number(document.getElementById('f-stockmin').value) || 0,
-      Talla: document.getElementById('f-talla').value.trim(),
-      Formato: document.getElementById('f-formato').value.trim(),
-      Ubicacion: document.getElementById('f-ubicacion').value.trim(),
+      Talla: talla,
+      Formato: formato,
+      Ubicacion: ubicacion,
       Vencimiento: document.getElementById('f-vencimiento').value,
       Notificado: false,
       UltimaActualizacion: new Date().toISOString(),
@@ -782,7 +905,15 @@
         };
       });
 
+      (data.catalogos || []).forEach(c => {
+        if(!catalogosLocal[c.Tipo]) catalogosLocal[c.Tipo] = [];
+        if(!catalogosLocal[c.Tipo].some(v => v.toLowerCase() === String(c.Valor).toLowerCase())){
+          catalogosLocal[c.Tipo].push(c.Valor);
+        }
+      });
+
       guardarLocal();
+      poblarFiltroUbicacion();
       toast(nuevos + ' ítem(s) nuevo(s) traído(s) del Sheet', 'exito');
       renderLista();
       actualizarIndicadorConexion();
@@ -868,6 +999,8 @@
   // Arranque
   // ---------------------------------------------------------------------
   actualizarIndicadorConexion();
+  poblarFiltroUbicacion();
+  poblarTodosLosCatalogos(null);
   renderLista();
   if(config.url) refrescarDesdeSheet();
 
