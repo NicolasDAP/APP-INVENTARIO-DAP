@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Inventario EPP</title>
+<style>
+  :root{
+    --black:#1a1a1a;
+    --black-2:#262626;
+    --orange:#ff6a13;
+    --orange-dark:#c9510a;
+    --bg:#f5f5f4;
+    --white:#ffffff;
+    --border:#e0ddd8;
+    --text:#1a1a1a;
+    --text-mute:#6b6b6b;
+    --green:#2e7d32;    --green-bg:#e8f5e9;
+    --orange-alert:#ef6c00; --orange-bg:#fff3e0;
+    --red:#c62828;      --red-bg:#fdecea;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  header{
+    background:var(--black); color:var(--white);
+    padding:14px 16px; display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:20; border-bottom:3px solid var(--orange);
+  }
+  header h1{
+    font-size:15px; margin:0; text-transform:uppercase; letter-spacing:1.5px; font-weight:800;
+  }
+  header h1 span{color:var(--orange);}
+  .sync-dot{width:9px;height:9px;border-radius:50%;background:var(--red);display:inline-block;margin-right:6px;vertical-align:middle;}
+  .sync-dot.ok{background:var(--green);}
+  .sync-dot.pend{background:var(--orange-alert);}
+  #estadoConexion{font-size:11px;color:#cfcfcf;display:flex;align-items:center;}
+
+  nav{
+    display:flex; background:var(--black-2); position:sticky; top:49px; z-index:19;
+    border-bottom:1px solid #000;
+  }
+  nav button{
+    flex:1; background:none; border:none; color:#bdbdbd; padding:11px 4px;
+    font-size:11px; text-transform:uppercase; letter-spacing:.6px; font-weight:700;
+    border-bottom:3px solid transparent; cursor:pointer;
+  }
+  nav button.activa{color:var(--white); border-bottom-color:var(--orange);}
+
+  main{max-width:760px; margin:0 auto; padding:14px 12px 40px;}
+  .vista{display:none;}
+  .vista.activa{display:block;}
+
+  .btn-volver{
+    background:none; border:none; color:var(--orange-dark); font-weight:700; font-size:13px;
+    padding:6px 0 14px; cursor:pointer; display:flex; align-items:center; gap:4px;
+  }
+
+  .barra-superior{display:flex; gap:8px; margin-bottom:12px;}
+  input, select{
+    width:100%; padding:10px 11px; border:1px solid var(--border); border-radius:6px;
+    font-size:14px; background:var(--white); color:var(--text); font-family:inherit;
+  }
+  input:focus, select:focus{outline:2px solid var(--orange); outline-offset:1px;}
+  label{font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--text-mute); font-weight:700; display:block; margin:14px 0 4px;}
+  label:first-child{margin-top:0;}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    background:var(--orange); color:var(--white); border:none; border-radius:6px;
+    padding:11px 16px; font-size:13px; font-weight:700; text-transform:uppercase;
+    letter-spacing:.4px; cursor:pointer; white-space:nowrap;
+  }
+  .btn:active{background:var(--orange-dark);}
+  .btn.secundario{background:var(--white); color:var(--black); border:1px solid var(--border);}
+  .btn.peligro{background:var(--red);}
+  .btn.ancho{width:100%;}
+  .btn.chico{padding:7px 10px; font-size:11px;}
+
+  .fab{
+    position:fixed; bottom:20px; right:20px; width:56px; height:56px; border-radius:50%;
+    background:var(--orange); color:var(--white); border:none; font-size:28px; box-shadow:0 3px 10px rgba(0,0,0,.3);
+    cursor:pointer; z-index:15; line-height:0;
+  }
+
+  /* ---- Lista compacta (Inventario) ---- */
+  .fila-item{
+    display:flex; align-items:center; gap:10px; background:var(--white);
+    border:1px solid var(--border); border-radius:8px; padding:10px 12px; margin-bottom:8px;
+    cursor:pointer;
+  }
+  .fila-barra{width:5px; align-self:stretch; border-radius:3px; background:var(--border); flex-shrink:0;}
+  .fila-barra.ok{background:var(--green);}
+  .fila-barra.bajo{background:var(--orange-alert);}
+  .fila-barra.agotado{background:var(--red);}
+  .fila-texto{flex:1; min-width:0;}
+  .fila-nombre{font-weight:700; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .fila-marca{font-size:11.5px; color:var(--text-mute); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .fila-cantidad{text-align:right; flex-shrink:0;}
+  .fila-cantidad-num{font-size:17px; font-weight:800;}
+  .fila-cantidad-num.bajo{color:var(--orange-alert);}
+  .fila-cantidad-num.agotado{color:var(--red);}
+  .fila-cantidad-label{font-size:9.5px; color:var(--text-mute); text-transform:uppercase;}
+  .fila-chevron{color:var(--text-mute); font-size:18px; flex-shrink:0;}
+
+  /* ---- Detalle ---- */
+  .detalle-header{margin-bottom:6px;}
+  .detalle-header h2{margin:0 0 2px; font-size:19px; font-weight:800;}
+  .detalle-header .marca{color:var(--text-mute); font-size:13px;}
+  .badge{
+    font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.4px;
+    padding:3px 8px; border-radius:20px; white-space:nowrap; display:inline-block; margin-top:6px;
+  }
+  .badge.ok{background:var(--green-bg); color:var(--green);}
+  .badge.bajo{background:var(--orange-bg); color:var(--orange-alert);}
+  .badge.agotado{background:var(--red-bg); color:var(--red);}
+  .badge.venc{background:#fff3e0; color:#a15c00; margin-left:6px;}
+  .badge.pend{background:#eee; color:#777; margin-left:6px;}
+
+  .grid-datos{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; margin:16px 0; font-size:13px;}
+  .grid-datos div b{display:block; color:var(--text-mute); font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.3px; margin-bottom:1px;}
+
+  .adjunto-actual{font-size:12.5px; margin-top:8px; padding:9px 11px; background:var(--white); border:1px solid var(--border); border-radius:6px; display:flex; justify-content:space-between; align-items:center; gap:8px;}
+  .adjunto-actual a{color:var(--orange-dark); font-weight:700; text-decoration:none;}
+  .adjunto-vacio{font-size:12.5px; color:var(--text-mute); margin-top:8px; padding:9px 11px; background:var(--white); border:1px dashed var(--border); border-radius:6px;}
+
+  .detalle-acciones{display:flex; gap:8px; margin-top:18px;}
+
+  .vacio{text-align:center; color:var(--text-mute); padding:50px 16px; font-size:13px;}
+
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%);
+    background:var(--black); color:var(--white); padding:10px 18px; border-radius:30px;
+    font-size:13px; z-index:50; box-shadow:0 3px 10px rgba(0,0,0,.3); max-width:90vw; text-align:center;
+  }
+  .toast.error{background:var(--red);}
+  .toast.exito{background:var(--green);}
+
+  .seccion-config{background:var(--white); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:14px;}
+  .seccion-config h2{font-size:13px; text-transform:uppercase; letter-spacing:.5px; margin:0 0 10px;}
+  .ayuda{font-size:11.5px; color:var(--text-mute); margin-top:4px; line-height:1.4;}
+  .ayuda-legal{font-size:11px; color:#8a5a1f; margin-top:4px; line-height:1.4; background:#fff8ef; border-left:3px solid var(--orange); padding:6px 8px; border-radius:3px;}
+  .fila-btns{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;}
+
+  .info-cat{font-size:11px; color:var(--text-mute); margin-top:4px; line-height:1.35;}
+
+  .contador-filtro{font-size:11.5px; color:var(--text-mute); margin-bottom:10px;}
+
+  .subseccion-doc{border-top:1px solid var(--border); margin-top:16px; padding-top:12px;}
+  .subseccion-doc h3{font-size:12px; text-transform:uppercase; letter-spacing:.4px; margin:0 0 2px; color:var(--text-mute);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Inventario <span>EPP</span></h1>
+  <div id="estadoConexion"><span class="sync-dot" id="syncDot"></span><span id="syncTexto">Sin config.</span></div>
+</header>
+
+<nav>
+  <button class="activa" data-vista="lista" id="navLista">Inventario</button>
+  <button data-vista="form" id="navNuevo">Nuevo ítem</button>
+  <button data-vista="config" id="navConfig">Configuración</button>
+</nav>
+
+<main>
+
+  <!-- ===================== VISTA LISTA (compacta) ===================== -->
+  <section class="vista activa" id="vista-lista">
+    <div class="barra-superior">
+      <input type="text" id="buscador" placeholder="Buscar ítem, marca, ubicación…">
+    </div>
+    <div class="barra-superior">
+      <select id="filtroCategoria">
+        <option value="">Categoría: todas</option>
+        <option value="I">Categoría I</option>
+        <option value="II">Categoría II</option>
+        <option value="III">Categoría III</option>
+      </select>
+      <select id="filtroEstado">
+        <option value="">Estado: todos</option>
+        <option value="ok">OK</option>
+        <option value="bajo">Bajo mínimo</option>
+        <option value="agotado">Agotado</option>
+      </select>
+    </div>
+    <div class="contador-filtro" id="contadorFiltro"></div>
+    <div id="listaItems"></div>
+  </section>
+
+  <!-- ===================== VISTA DETALLE ===================== -->
+  <section class="vista" id="vista-detalle">
+    <button class="btn-volver" id="btnVolverDetalle">← Volver al inventario</button>
+    <div class="detalle-header">
+      <h2 id="det-item"></h2>
+      <div class="marca" id="det-marca"></div>
+      <span class="badge" id="det-badge"></span>
+      <span class="badge venc" id="det-badge-venc" style="display:none;">Por vencer</span>
+    </div>
+    <div class="grid-datos">
+      <div><b>Categoría</b><span id="det-categoria"></span></div>
+      <div><b>Cantidad / Mínimo</b><span id="det-cantidad"></span></div>
+      <div><b>Talla</b><span id="det-talla"></span></div>
+      <div><b>Formato</b><span id="det-formato"></span></div>
+      <div><b>Ubicación</b><span id="det-ubicacion"></span></div>
+      <div><b>Vencimiento (vida útil)</b><span id="det-vencimiento"></span></div>
+    </div>
+
+    <div class="subseccion-doc">
+      <h3>Certificación</h3>
+      <div id="det-certificado"></div>
+    </div>
+    <div class="subseccion-doc">
+      <h3>Ficha técnica</h3>
+      <div id="det-ficha"></div>
+    </div>
+
+    <div class="detalle-acciones">
+      <button class="btn secundario ancho" id="btnEditarDesdeDetalle">Editar</button>
+      <button class="btn peligro ancho" id="btnEliminarDesdeDetalle">Eliminar</button>
+    </div>
+  </section>
+
+  <!-- ===================== VISTA FORMULARIO ===================== -->
+  <section class="vista" id="vista-form">
+    <button class="btn-volver" id="btnVolverForm">← Volver al inventario</button>
+    <input type="hidden" id="f-id">
+    <div class="seccion-config">
+      <h2 id="tituloForm">Nuevo ítem</h2>
+
+      <label>Ítem</label>
+      <input type="text" id="f-item" placeholder="Ej. Guante de protección mecánica">
+
+      <label>Marca / Detalle</label>
+      <input type="text" id="f-marca" placeholder="Ej. 3M Comfort Grip">
+
+      <label>Categoría EPP</label>
+      <select id="f-categoria">
+        <option value="">Sin definir</option>
+        <option value="I">I — riesgo leve</option>
+        <option value="II">II — riesgo intermedio</option>
+        <option value="III">III — riesgo grave / irreversible</option>
+      </select>
+      <div class="ayuda-legal"><b>Exigido por ley:</b> Res. Exenta N° 1538/2020 (ISP), Anexo 2, clasifica todo EPP en I (contactos superficiales, sol, &lt;50°C), II (mayoría de los EPP) o III (caídas de altura, eléctrico, químico, asfixia, ahogamiento, ruido nocivo y otros riesgos graves).</div>
+
+      <label>Cantidad</label>
+      <input type="number" id="f-cantidad" min="0" step="1" value="0">
+
+      <label>Stock mínimo (dispara alerta)</label>
+      <input type="number" id="f-stockmin" min="0" step="1" value="0">
+
+      <label>Talla</label>
+      <input type="text" id="f-talla" placeholder="Ej. M, 42, única">
+
+      <label>Formato</label>
+      <input type="text" id="f-formato" placeholder="Ej. Par, unidad, caja x50">
+
+      <label>Ubicación</label>
+      <input type="text" id="f-ubicacion" placeholder="Ej. Bodega Hangar 135">
+
+      <label>Vencimiento / vida útil del EPP (opcional)</label>
+      <input type="date" id="f-vencimiento">
+      <div class="ayuda-legal"><b>Exigido por ley:</b> Guía ISP (Res. Ex. N° 666/2025), punto 6.3.6 Sustitución — la entidad empleadora debe fijar criterios de reposición según la vida útil que declara el fabricante.</div>
+
+      <div class="subseccion-doc">
+        <h3>Certificación</h3>
+        <label>Documento (certificado de conformidad / resolución RFI)</label>
+        <input type="file" id="f-certificado" accept=".pdf,.jpg,.jpeg,.png">
+        <div class="ayuda-legal"><b>Exigido por ley:</b> D.S. N°594/1999 art. 53-54 (MINSAL) y D.S. N°44/2024 (MINTRAB) exigen EPP con certificación de calidad vigente (Certificado ISP o incorporación al RFI). Se sube a Drive y queda accesible desde la app; no aparece como columna en el Inventario del Sheet.</div>
+
+        <label>Vencimiento de la certificación (opcional)</label>
+        <input type="date" id="f-vencimiento-cert">
+        <div class="ayuda-legal"><b>Referencia:</b> la incorporación al RFI tiene vigencia de 3 años renovable (Res. Ex. N°45/2023, ISP). Si lo completas, se envía una alerta automática cuando esté por vencer.</div>
+        <div id="adjuntoActualCert"></div>
+      </div>
+
+      <div class="subseccion-doc">
+        <h3>Ficha técnica</h3>
+        <label>Documento (folleto informativo del fabricante)</label>
+        <input type="file" id="f-ficha" accept=".pdf,.jpg,.jpeg,.png">
+        <div class="ayuda-legal"><b>Exigido por ley:</b> Guía ISP (Res. Ex. N° 666/2025), punto 6.3.3 — todo EPP debe entregarse con Folleto Informativo en español (uso, ajuste, mantención, limitaciones, vida útil).</div>
+        <div id="adjuntoActualFicha"></div>
+      </div>
+
+      <div class="fila-btns">
+        <button class="btn ancho" id="btnGuardarItem">Guardar ítem</button>
+      </div>
+      <div class="fila-btns">
+        <button class="btn secundario ancho" id="btnCancelarForm">Cancelar</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== VISTA CONFIGURACIÓN ===================== -->
+  <section class="vista" id="vista-config">
+    <div class="seccion-config">
+      <h2>Conexión con Google Sheets</h2>
+      <label>URL de la Apps Script (/exec)</label>
+      <input type="text" id="cfg-url" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+      <div class="ayuda">Se obtiene al implementar el Inventario_AppsScript.gs como aplicación web ("Ejecutar como: Yo", "Acceso: Cualquier usuario con el enlace").</div>
+
+      <label>Correos para alertas (stock bajo y vencimiento de certificación)</label>
+      <input type="text" id="cfg-correos" placeholder="correo1@dominio.cl, correo2@dominio.cl">
+      <div class="ayuda">Se revisa una vez al día (8:00) en el servidor. Requiere ejecutar crearTriggerDiario() una vez desde el editor de Apps Script.</div>
+
+      <div class="fila-btns">
+        <button class="btn ancho" id="btnGuardarConfig">Guardar configuración</button>
+      </div>
+    </div>
+
+    <div class="seccion-config">
+      <h2>Sincronización</h2>
+      <div class="ayuda" id="resumenPendientes"></div>
+      <div class="fila-btns">
+        <button class="btn secundario ancho" id="btnSincronizarTodo">Sincronizar pendientes</button>
+      </div>
+      <div class="fila-btns">
+        <button class="btn secundario ancho" id="btnRefrescarDesdeSheet">Actualizar desde el Sheet</button>
+      </div>
+    </div>
+
+    <div class="seccion-config">
+      <h2>Respaldo local</h2>
+      <div class="ayuda">Exporta/importa el inventario local del dispositivo. Al importar, se fusiona por ID (no se borra nada existente).</div>
+      <div class="fila-btns">
+        <button class="btn secundario ancho" id="btnExportar">Exportar respaldo (JSON)</button>
+      </div>
+      <div class="fila-btns">
+        <input type="file" id="inputImportar" accept="application/json" style="display:none;">
+        <button class="btn secundario ancho" id="btnImportar">Importar respaldo</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<button class="fab" id="fabNuevo" title="Nuevo ítem">+</button>
+
+<script>
+(function(){
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // Estado y persistencia local
+  // ---------------------------------------------------------------------
+  const CLAVE_ITEMS = 'inv-epp-items';
+  const CLAVE_DOCS  = 'inv-epp-docs';
+  const CLAVE_CFG   = 'inv-epp-cfg';
+
+  let items = cargarJSON(CLAVE_ITEMS, []);
+  // documentos[idItem] = { Certificado:{NombreArchivo,LinkDrive,FechaVencimiento}, FichaTecnica:{NombreArchivo,LinkDrive} }
+  let documentos = cargarJSON(CLAVE_DOCS, {});
+  let config = cargarJSON(CLAVE_CFG, { url:'', correos:'' });
+
+  let idDetalleActual = null;
+
+  function cargarJSON(clave, porDefecto){
+    try{
+      const crudo = localStorage.getItem(clave);
+      return crudo ? JSON.parse(crudo) : porDefecto;
+    }catch(e){ return porDefecto; }
+  }
+  function guardarLocal(){
+    localStorage.setItem(CLAVE_ITEMS, JSON.stringify(items));
+    localStorage.setItem(CLAVE_DOCS, JSON.stringify(documentos));
+    localStorage.setItem(CLAVE_CFG, JSON.stringify(config));
+  }
+
+  function generarId(){
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+  }
+
+  // ---------------------------------------------------------------------
+  // Navegación entre vistas
+  // ---------------------------------------------------------------------
+  const botonesNav = document.querySelectorAll('nav button');
+  const vistas = document.querySelectorAll('.vista');
+  function mostrarVista(nombre){
+    vistas.forEach(v => v.classList.toggle('activa', v.id === 'vista-' + nombre));
+    botonesNav.forEach(b => b.classList.toggle('activa', b.dataset.vista === nombre));
+    if(nombre === 'lista') renderLista();
+    if(nombre === 'config') renderConfig();
+  }
+  botonesNav.forEach(b => b.addEventListener('click', () => mostrarVista(b.dataset.vista)));
+
+  // El tab "Nuevo ítem" y el FAB siempre parten de un formulario limpio.
+  document.getElementById('navNuevo').addEventListener('click', prepararFormNuevo);
+  document.getElementById('fabNuevo').addEventListener('click', () => { prepararFormNuevo(); mostrarVista('form'); });
+
+  document.getElementById('btnVolverDetalle').addEventListener('click', () => mostrarVista('lista'));
+  document.getElementById('btnVolverForm').addEventListener('click', () => mostrarVista('lista'));
+
+  // ---------------------------------------------------------------------
+  // Toast
+  // ---------------------------------------------------------------------
+  let toastTimeout;
+  function toast(msg, tipo){
+    let el = document.querySelector('.toast');
+    if(el) el.remove();
+    el = document.createElement('div');
+    el.className = 'toast' + (tipo ? ' ' + tipo : '');
+    el.textContent = msg;
+    document.body.appendChild(el);
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => el.remove(), 3200);
+  }
+
+  // ---------------------------------------------------------------------
+  // Estado de conexión (indicador arriba)
+  // ---------------------------------------------------------------------
+  function actualizarIndicadorConexion(){
+    const dot = document.getElementById('syncDot');
+    const txt = document.getElementById('syncTexto');
+    if(!config.url){
+      dot.className = 'sync-dot';
+      txt.textContent = 'Sin configurar';
+      return;
+    }
+    const pendientes = items.filter(it => !it._sincronizado).length;
+    if(pendientes === 0){
+      dot.className = 'sync-dot ok';
+      txt.textContent = 'Sincronizado';
+    } else {
+      dot.className = 'sync-dot pend';
+      txt.textContent = pendientes + ' sin sincronizar';
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Cálculo de estado de stock / vencimiento
+  // ---------------------------------------------------------------------
+  function estadoStock(item){
+    const cant = Number(item.Cantidad) || 0;
+    const min = Number(item.StockMinimo) || 0;
+    if (cant <= 0) return 'agotado';
+    if (cant <= min) return 'bajo';
+    return 'ok';
+  }
+  function etiquetaEstado(estado){
+    return estado === 'ok' ? 'OK' : estado === 'bajo' ? 'Bajo mínimo' : 'Agotado';
+  }
+  function estaPorVencer(fechaTexto){
+    if(!fechaTexto) return false;
+    const dias = (new Date(fechaTexto) - new Date()) / 86400000;
+    return dias <= 30;
+  }
+
+  // ---------------------------------------------------------------------
+  // Render listado (compacto: ítem + cantidad, tap abre detalle)
+  // ---------------------------------------------------------------------
+  function renderLista(){
+    const buscar = document.getElementById('buscador').value.trim().toLowerCase();
+    const filtroCat = document.getElementById('filtroCategoria').value;
+    const filtroEstado = document.getElementById('filtroEstado').value;
+
+    let filtrados = items.filter(it => {
+      if (buscar) {
+        const texto = [it.Item, it['Marca/Detalle'], it.Ubicacion].join(' ').toLowerCase();
+        if (!texto.includes(buscar)) return false;
+      }
+      if (filtroCat && it.Categoria !== filtroCat) return false;
+      if (filtroEstado && estadoStock(it) !== filtroEstado) return false;
+      return true;
+    });
+
+    filtrados.sort((a,b) => (a.Item||'').localeCompare(b.Item||''));
+
+    document.getElementById('contadorFiltro').textContent =
+      filtrados.length + ' de ' + items.length + ' ítem(s)';
+
+    const cont = document.getElementById('listaItems');
+    cont.innerHTML = '';
+
+    if (filtrados.length === 0){
+      cont.innerHTML = '<div class="vacio">No hay ítems que coincidan. Toca "+" para agregar el primero.</div>';
+      return;
+    }
+
+    filtrados.forEach(it => {
+      const estado = estadoStock(it);
+      const fila = document.createElement('div');
+      fila.className = 'fila-item';
+      fila.innerHTML = `
+        <div class="fila-barra ${estado}"></div>
+        <div class="fila-texto">
+          <div class="fila-nombre">${escapar(it.Item || '(sin nombre)')}</div>
+          <div class="fila-marca">${escapar(it['Marca/Detalle'] || '')}</div>
+        </div>
+        <div class="fila-cantidad">
+          <div class="fila-cantidad-num ${estado}">${Number(it.Cantidad)||0}</div>
+          <div class="fila-cantidad-label">${escapar(it.Formato || 'unid.')}</div>
+        </div>
+        <div class="fila-chevron">›</div>
+      `;
+      fila.addEventListener('click', () => abrirDetalle(it.ID));
+      cont.appendChild(fila);
+    });
+  }
+
+  function escapar(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  document.getElementById('buscador').addEventListener('input', renderLista);
+  document.getElementById('filtroCategoria').addEventListener('change', renderLista);
+  document.getElementById('filtroEstado').addEventListener('change', renderLista);
+
+  // ---------------------------------------------------------------------
+  // Vista detalle
+  // ---------------------------------------------------------------------
+  function abrirDetalle(id){
+    const it = items.find(x => x.ID === id);
+    if(!it) return;
+    idDetalleActual = id;
+
+    const estado = estadoStock(it);
+    document.getElementById('det-item').textContent = it.Item || '(sin nombre)';
+    document.getElementById('det-marca').textContent = it['Marca/Detalle'] || '';
+    document.getElementById('det-badge').className = 'badge ' + estado;
+    document.getElementById('det-badge').textContent = etiquetaEstado(estado);
+    document.getElementById('det-badge-venc').style.display = estaPorVencer(it.Vencimiento) ? 'inline-block' : 'none';
+
+    document.getElementById('det-categoria').textContent = it.Categoria || '—';
+    document.getElementById('det-cantidad').textContent = (Number(it.Cantidad)||0) + ' / ' + (Number(it.StockMinimo)||0);
+    document.getElementById('det-talla').textContent = it.Talla || '—';
+    document.getElementById('det-formato').textContent = it.Formato || '—';
+    document.getElementById('det-ubicacion').textContent = it.Ubicacion || '—';
+    document.getElementById('det-vencimiento').textContent = it.Vencimiento || '—';
+
+    const docs = documentos[id] || {};
+    document.getElementById('det-certificado').innerHTML = renderAdjunto(docs.Certificado, true);
+    document.getElementById('det-ficha').innerHTML = renderAdjunto(docs.FichaTecnica, false);
+
+    mostrarVista('detalle');
+  }
+
+  function renderAdjunto(doc, esCertificado){
+    if(!doc || !doc.LinkDrive){
+      return '<div class="adjunto-vacio">Sin documento adjunto. Edita el ítem para subirlo.</div>';
+    }
+    let extra = '';
+    if(esCertificado && doc.FechaVencimiento){
+      const porVencer = estaPorVencer(doc.FechaVencimiento);
+      extra = `<span class="badge ${porVencer ? 'venc' : ''}" style="margin-left:0;margin-top:4px;background:${porVencer?'#fff3e0':'#eee'};color:${porVencer?'#a15c00':'#666'};">Vence: ${escapar(doc.FechaVencimiento)}</span>`;
+    }
+    return `<div class="adjunto-actual"><span>📄 ${escapar(doc.NombreArchivo)}${extra ? '<br>'+extra : ''}</span><a href="${doc.LinkDrive}" target="_blank" rel="noopener">Ver</a></div>`;
+  }
+
+  document.getElementById('btnEditarDesdeDetalle').addEventListener('click', () => {
+    prepararFormEdicion(idDetalleActual);
+    mostrarVista('form');
+  });
+  document.getElementById('btnEliminarDesdeDetalle').addEventListener('click', () => {
+    eliminarItem(idDetalleActual);
+  });
+
+  // ---------------------------------------------------------------------
+  // Formulario nuevo / editar
+  // ---------------------------------------------------------------------
+  function limpiarForm(){
+    ['f-id','f-item','f-marca','f-talla','f-formato','f-ubicacion','f-vencimiento','f-vencimiento-cert'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('f-categoria').value = '';
+    document.getElementById('f-cantidad').value = 0;
+    document.getElementById('f-stockmin').value = 0;
+    document.getElementById('f-certificado').value = '';
+    document.getElementById('f-ficha').value = '';
+    document.getElementById('adjuntoActualCert').innerHTML = '';
+    document.getElementById('adjuntoActualFicha').innerHTML = '';
+  }
+
+  function prepararFormNuevo(){
+    limpiarForm();
+    document.getElementById('tituloForm').textContent = 'Nuevo ítem';
+  }
+
+  function prepararFormEdicion(id){
+    const it = items.find(x => x.ID === id);
+    if(!it) return;
+    limpiarForm();
+    document.getElementById('tituloForm').textContent = 'Editar ítem';
+    document.getElementById('f-id').value = it.ID;
+    document.getElementById('f-item').value = it.Item || '';
+    document.getElementById('f-marca').value = it['Marca/Detalle'] || '';
+    document.getElementById('f-categoria').value = it.Categoria || '';
+    document.getElementById('f-cantidad').value = Number(it.Cantidad)||0;
+    document.getElementById('f-stockmin').value = Number(it.StockMinimo)||0;
+    document.getElementById('f-talla').value = it.Talla || '';
+    document.getElementById('f-formato').value = it.Formato || '';
+    document.getElementById('f-ubicacion').value = it.Ubicacion || '';
+    document.getElementById('f-vencimiento').value = it.Vencimiento || '';
+
+    const docs = documentos[id] || {};
+    if(docs.Certificado){
+      document.getElementById('f-vencimiento-cert').value = docs.Certificado.FechaVencimiento || '';
+      document.getElementById('adjuntoActualCert').innerHTML = renderAdjunto(docs.Certificado, true);
+    }
+    if(docs.FichaTecnica){
+      document.getElementById('adjuntoActualFicha').innerHTML = renderAdjunto(docs.FichaTecnica, false);
+    }
+  }
+
+  document.getElementById('btnCancelarForm').addEventListener('click', () => mostrarVista('lista'));
+
+  document.getElementById('btnGuardarItem').addEventListener('click', async () => {
+    const nombreItem = document.getElementById('f-item').value.trim();
+    if(!nombreItem){ toast('El campo Ítem es obligatorio', 'error'); return; }
+
+    let id = document.getElementById('f-id').value;
+    const esNuevo = !id;
+    if(esNuevo) id = generarId();
+
+    const item = {
+      ID: id,
+      Item: nombreItem,
+      'Marca/Detalle': document.getElementById('f-marca').value.trim(),
+      Categoria: document.getElementById('f-categoria').value,
+      Cantidad: Number(document.getElementById('f-cantidad').value) || 0,
+      StockMinimo: Number(document.getElementById('f-stockmin').value) || 0,
+      Talla: document.getElementById('f-talla').value.trim(),
+      Formato: document.getElementById('f-formato').value.trim(),
+      Ubicacion: document.getElementById('f-ubicacion').value.trim(),
+      Vencimiento: document.getElementById('f-vencimiento').value,
+      Notificado: false,
+      UltimaActualizacion: new Date().toISOString(),
+      _sincronizado: false
+    };
+
+    // Guardado local inmediato: nunca se pierde por falta de señal.
+    const idx = items.findIndex(x => x.ID === id);
+    if(idx >= 0) items[idx] = Object.assign({}, items[idx], item, {_sincronizado:false});
+    else items.push(item);
+    guardarLocal();
+    toast('Guardado localmente' + (esNuevo ? '' : ' (edición)'), 'exito');
+
+    // Documentos adjuntos (si se seleccionó alguno)
+    const archivoCert = document.getElementById('f-certificado').files[0];
+    const fechaVencCert = document.getElementById('f-vencimiento-cert').value;
+    const archivoFicha = document.getElementById('f-ficha').files[0];
+
+    if(archivoCert){
+      try{ await subirDocumento(id, archivoCert, 'Certificado', fechaVencCert); }
+      catch(e){ toast('No se pudo subir la certificación: ' + e.message, 'error'); }
+    } else if (fechaVencCert && documentos[id] && documentos[id].Certificado){
+      try{ await actualizarVencimientoCertificado(id, fechaVencCert); }
+      catch(e){ toast('No se pudo actualizar el vencimiento: ' + e.message, 'error'); }
+    }
+
+    if(archivoFicha){
+      try{ await subirDocumento(id, archivoFicha, 'FichaTecnica', ''); }
+      catch(e){ toast('No se pudo subir la ficha técnica: ' + e.message, 'error'); }
+    }
+
+    // Intento de sincronización inmediata a Sheets
+    await sincronizarItem(id);
+
+    mostrarVista('lista');
+  });
+
+  function eliminarItem(id){
+    if(!confirm('¿Eliminar este ítem? Esta acción no se puede deshacer.')) return;
+    items = items.filter(x => x.ID !== id);
+    delete documentos[id];
+    guardarLocal();
+    mostrarVista('lista');
+    actualizarIndicadorConexion();
+    if(config.url){
+      fetch(config.url, {
+        method:'POST',
+        body: JSON.stringify({ accion:'eliminarItem', id })
+      }).catch(() => toast('Eliminado local; no se pudo avisar al Sheet todavía', 'error'));
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Sincronización con Apps Script
+  // ---------------------------------------------------------------------
+  function fileALaBase64(archivo){
+    return new Promise((resolve, reject) => {
+      const lector = new FileReader();
+      lector.onload = () => resolve(lector.result.split(',')[1]);
+      lector.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      lector.readAsDataURL(archivo);
+    });
+  }
+
+  async function subirDocumento(idItem, archivo, tipoDocumento, fechaVencimiento){
+    if(!config.url) throw new Error('configura primero la URL de Apps Script');
+    const base64 = await fileALaBase64(archivo);
+    const resp = await fetch(config.url, {
+      method:'POST',
+      body: JSON.stringify({
+        accion:'subirDocumento',
+        idItem, nombreArchivo: archivo.name, mimeType: archivo.type, base64,
+        tipoDocumento, fechaVencimiento
+      })
+    });
+    const data = await resp.json();
+    if(!data.ok) throw new Error(data.error || 'error desconocido');
+    if(!documentos[idItem]) documentos[idItem] = {};
+    documentos[idItem][tipoDocumento] = {
+      NombreArchivo: archivo.name,
+      LinkDrive: data.link,
+      FechaVencimiento: tipoDocumento === 'Certificado' ? fechaVencimiento : undefined
+    };
+    guardarLocal();
+    toast((tipoDocumento === 'Certificado' ? 'Certificación' : 'Ficha técnica') + ' subida a Drive', 'exito');
+  }
+
+  async function actualizarVencimientoCertificado(idItem, fechaVencimiento){
+    if(!config.url) throw new Error('configura primero la URL de Apps Script');
+    const resp = await fetch(config.url, {
+      method:'POST',
+      body: JSON.stringify({ accion:'actualizarVencimientoCertificado', idItem, fechaVencimiento })
+    });
+    const data = await resp.json();
+    if(!data.ok) throw new Error(data.error || 'error desconocido');
+    if(documentos[idItem] && documentos[idItem].Certificado){
+      documentos[idItem].Certificado.FechaVencimiento = fechaVencimiento;
+      guardarLocal();
+    }
+  }
+
+  async function sincronizarItem(id){
+    if(!config.url){ actualizarIndicadorConexion(); return; }
+    const item = items.find(x => x.ID === id);
+    if(!item) return;
+    try{
+      const resp = await fetch(config.url, {
+        method:'POST',
+        body: JSON.stringify({ accion:'guardarItem', item })
+      });
+      const data = await resp.json();
+      if(data.ok){
+        item._sincronizado = true;
+        guardarLocal();
+      }
+    }catch(e){
+      // Sin señal: queda pendiente, se reintenta manualmente después.
+    }
+    actualizarIndicadorConexion();
+  }
+
+  async function sincronizarPendientes(){
+    if(!config.url){ toast('Configura primero la URL de Apps Script', 'error'); return; }
+    const pendientes = items.filter(it => !it._sincronizado);
+    if(pendientes.length === 0){ toast('No hay ítems pendientes'); return; }
+    let ok = 0;
+    for(const it of pendientes){
+      await sincronizarItem(it.ID);
+      if(it._sincronizado) ok++;
+    }
+    toast(ok + ' de ' + pendientes.length + ' ítem(s) sincronizados', ok === pendientes.length ? 'exito' : 'error');
+    renderLista();
+  }
+
+  async function refrescarDesdeSheet(){
+    if(!config.url){ toast('Configura primero la URL de Apps Script', 'error'); return; }
+    try{
+      const resp = await fetch(config.url, { method:'GET' });
+      const data = await resp.json();
+      if(!data.ok) throw new Error(data.error || 'respuesta inválida');
+
+      let nuevos = 0;
+      (data.items || []).forEach(remoto => {
+        const existe = items.find(x => x.ID === remoto.ID);
+        if(!existe){
+          items.push(Object.assign({}, remoto, {_sincronizado:true}));
+          nuevos++;
+        }
+      });
+      (data.documentos || []).forEach(d => {
+        const tipo = d.TipoDocumento || 'Certificado'; // filas antiguas sin TipoDocumento = certificado
+        if(!documentos[d.IdItem]) documentos[d.IdItem] = {};
+        documentos[d.IdItem][tipo] = {
+          NombreArchivo: d.NombreArchivo,
+          LinkDrive: d.LinkDrive,
+          FechaVencimiento: d.FechaVencimiento || undefined
+        };
+      });
+
+      guardarLocal();
+      toast(nuevos + ' ítem(s) nuevo(s) traído(s) del Sheet', 'exito');
+      renderLista();
+      actualizarIndicadorConexion();
+    }catch(e){
+      toast('No se pudo leer el Sheet: ' + e.message, 'error');
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Configuración
+  // ---------------------------------------------------------------------
+  function renderConfig(){
+    document.getElementById('cfg-url').value = config.url || '';
+    document.getElementById('cfg-correos').value = config.correos || '';
+    const pendientes = items.filter(it => !it._sincronizado).length;
+    document.getElementById('resumenPendientes').textContent =
+      pendientes === 0 ? 'Todo sincronizado.' : pendientes + ' ítem(s) guardados localmente sin confirmar en el Sheet.';
+  }
+
+  document.getElementById('btnGuardarConfig').addEventListener('click', async () => {
+    config.url = document.getElementById('cfg-url').value.trim();
+    config.correos = document.getElementById('cfg-correos').value.trim();
+    guardarLocal();
+    actualizarIndicadorConexion();
+    toast('Configuración guardada', 'exito');
+
+    if(config.url && config.correos){
+      try{
+        await fetch(config.url, {
+          method:'POST',
+          body: JSON.stringify({ accion:'guardarConfig', clave:'CORREOS_ALERTA', valor: config.correos })
+        });
+      }catch(e){
+        toast('Configuración guardada local; no se pudo enviar los correos al Sheet todavía', 'error');
+      }
+    }
+  });
+
+  document.getElementById('btnSincronizarTodo').addEventListener('click', sincronizarPendientes);
+  document.getElementById('btnRefrescarDesdeSheet').addEventListener('click', refrescarDesdeSheet);
+
+  // ---------------------------------------------------------------------
+  // Respaldo local (exportar / importar, fusión no destructiva)
+  // ---------------------------------------------------------------------
+  document.getElementById('btnExportar').addEventListener('click', () => {
+    const respaldo = { _tipo:'InventarioEPP_respaldo', fecha:new Date().toISOString(), items, documentos, config };
+    const blob = new Blob([JSON.stringify(respaldo, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'inventario_epp_respaldo_' + new Date().toISOString().slice(0,10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('btnImportar').addEventListener('click', () => document.getElementById('inputImportar').click());
+  document.getElementById('inputImportar').addEventListener('change', (e) => {
+    const archivo = e.target.files[0];
+    if(!archivo) return;
+    const lector = new FileReader();
+    lector.onload = () => {
+      try{
+        const datos = JSON.parse(lector.result);
+        if(datos._tipo !== 'InventarioEPP_respaldo') throw new Error('archivo no reconocido');
+        let agregados = 0, actualizados = 0;
+        (datos.items || []).forEach(it => {
+          const idx = items.findIndex(x => x.ID === it.ID);
+          if(idx >= 0){ items[idx] = Object.assign({}, items[idx], it); actualizados++; }
+          else { items.push(it); agregados++; }
+        });
+        Object.assign(documentos, datos.documentos || {});
+        guardarLocal();
+        toast(agregados + ' agregado(s), ' + actualizados + ' actualizado(s)', 'exito');
+        renderLista();
+      }catch(err){
+        toast('No se pudo importar: ' + err.message, 'error');
+      }
+    };
+    lector.readAsText(archivo);
+    e.target.value = '';
+  });
+
+  // ---------------------------------------------------------------------
+  // Arranque
+  // ---------------------------------------------------------------------
+  actualizarIndicadorConexion();
+  renderLista();
+  if(config.url) refrescarDesdeSheet();
+
+})();
+</script>
+</body>
+</html>
