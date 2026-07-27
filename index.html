@@ -106,6 +106,16 @@
   .fila-cantidad-label{font-size:9.5px; color:var(--text-mute); text-transform:uppercase;}
   .fila-chevron{color:var(--text-mute); font-size:18px; flex-shrink:0;}
 
+  .chip-catalogo{
+    display:inline-flex; align-items:center; gap:6px; background:var(--white); border:1px solid var(--border);
+    border-radius:20px; padding:5px 6px 5px 12px; font-size:12.5px; margin:0 6px 6px 0;
+  }
+  .chip-catalogo button{
+    background:var(--red-bg); color:var(--red); border:none; border-radius:50%; width:20px; height:20px;
+    font-size:12px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .lista-chips{display:flex; flex-wrap:wrap;}
+
   /* ---- Detalle ---- */
   .detalle-header{margin-bottom:6px;}
   .detalle-header h2{margin:0 0 2px; font-size:19px; font-weight:800;}
@@ -212,6 +222,7 @@
       <div><b>Formato</b><span id="det-formato"></span></div>
       <div><b>Ubicación</b><span id="det-ubicacion"></span></div>
       <div><b>Vencimiento (vida útil)</b><span id="det-vencimiento"></span></div>
+      <div><b>Actualizado por</b><span id="det-actualizadopor"></span></div>
     </div>
 
     <div class="subseccion-doc">
@@ -307,6 +318,13 @@
   <!-- ===================== VISTA CONFIGURACIÓN ===================== -->
   <section class="vista" id="vista-config">
     <div class="seccion-config">
+      <h2>Tu perfil</h2>
+      <label>Tu nombre</label>
+      <input type="text" id="cfg-usuario" placeholder="Ej. Nicolás Contreras">
+      <div class="ayuda">Queda registrado como "Actualizado por" en cada ítem que guardes o edites, para saber quién hizo el levantamiento. Es un dato de este dispositivo, no se sincroniza como catálogo.</div>
+    </div>
+
+    <div class="seccion-config">
       <h2>Conexión con Google Sheets</h2>
       <label>URL de la Apps Script (/exec)</label>
       <input type="text" id="cfg-url" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
@@ -343,6 +361,24 @@
         <button class="btn secundario ancho" id="btnImportar">Importar respaldo</button>
       </div>
     </div>
+
+    <div class="seccion-config">
+      <h2>Catálogos</h2>
+      <div class="ayuda">Edita los valores disponibles en los combos del formulario. Borrar un valor no afecta a los ítems que ya lo usan.</div>
+      <label>Catálogo a editar</label>
+      <select id="catGestionTipo">
+        <option value="Item">Ítem</option>
+        <option value="Marca">Marca/Detalle</option>
+        <option value="Talla">Talla</option>
+        <option value="Formato">Formato</option>
+        <option value="Ubicacion">Ubicación</option>
+      </select>
+      <div class="lista-chips" id="catGestionLista" style="margin-top:10px;"></div>
+      <div class="fila-btns">
+        <input type="text" id="catGestionNuevo" placeholder="Agregar valor nuevo…" style="flex:1;">
+        <button class="btn chico" id="catGestionAgregar">Agregar</button>
+      </div>
+    </div>
   </section>
 
 </main>
@@ -364,7 +400,7 @@
   let items = cargarJSON(CLAVE_ITEMS, []);
   // documentos[idItem] = { Certificado:{NombreArchivo,LinkDrive,FechaVencimiento}, FichaTecnica:{NombreArchivo,LinkDrive} }
   let documentos = cargarJSON(CLAVE_DOCS, {});
-  let config = cargarJSON(CLAVE_CFG, { url:'', correos:'' });
+  let config = cargarJSON(CLAVE_CFG, { url:'', correos:'', usuario:'' });
   // catalogosLocal[tipo] = [valores...]; se autocompletan con el uso ("+ Otro").
   let catalogosLocal = cargarJSON(CLAVE_CAT, {
     Ubicacion: ['Bodega APR', 'Estación de emergencia'],
@@ -506,17 +542,18 @@
 
     filtrados.forEach(it => {
       const estado = estadoStock(it);
+      const subtitulo = [it.Talla, it['Marca/Detalle'], it.Ubicacion].filter(Boolean).join(' · ');
       const fila = document.createElement('div');
       fila.className = 'fila-item';
       fila.innerHTML = `
         <div class="fila-barra ${estado}"></div>
         <div class="fila-texto">
           <div class="fila-nombre">${escapar(it.Item || '(sin nombre)')}</div>
-          <div class="fila-marca">${escapar(it['Marca/Detalle'] || '')}</div>
+          <div class="fila-marca">${escapar(subtitulo || '—')}</div>
         </div>
         <div class="fila-cantidad">
           <div class="fila-cantidad-num ${estado}">${Number(it.Cantidad)||0}</div>
-          <div class="fila-cantidad-label">${escapar(it.Formato || 'unid.')}</div>
+          <div class="fila-cantidad-label">mín. ${Number(it.StockMinimo)||0}</div>
         </div>
         <div class="fila-chevron">›</div>
       `;
@@ -554,6 +591,7 @@
     document.getElementById('det-formato').textContent = it.Formato || '—';
     document.getElementById('det-ubicacion').textContent = it.Ubicacion || '—';
     document.getElementById('det-vencimiento').textContent = it.Vencimiento || '—';
+    document.getElementById('det-actualizadopor').textContent = it.ActualizadoPor || '—';
 
     const docs = documentos[id] || {};
     document.getElementById('det-certificado').innerHTML = renderAdjunto(docs.Certificado, true);
@@ -664,6 +702,50 @@
     return valor;
   }
 
+  async function eliminarValorCatalogoServidor(tipo, valor){
+    if(!config.url) return;
+    try{
+      await fetch(config.url, { method:'POST', body: JSON.stringify({ accion:'eliminarValorCatalogo', tipo, valor }) });
+    }catch(e){ /* se ignora: el valor ya se quitó localmente */ }
+  }
+
+  function renderCatalogoGestion(){
+    const tipo = document.getElementById('catGestionTipo').value;
+    const cont = document.getElementById('catGestionLista');
+    const valores = (catalogosLocal[tipo] || []).slice().sort((a,b) => a.localeCompare(b));
+    cont.innerHTML = '';
+    if(valores.length === 0){
+      cont.innerHTML = '<div class="ayuda">Todavía no hay valores en este catálogo.</div>';
+      return;
+    }
+    valores.forEach(v => {
+      const chip = document.createElement('div');
+      chip.className = 'chip-catalogo';
+      chip.innerHTML = `<span>${escapar(v)}</span><button title="Eliminar">✕</button>`;
+      chip.querySelector('button').addEventListener('click', () => {
+        if(!confirm('¿Quitar "' + v + '" del catálogo de ' + ETIQUETAS_CATALOGO[tipo] + '? Los ítems que ya lo usan no se modifican.')) return;
+        catalogosLocal[tipo] = (catalogosLocal[tipo] || []).filter(x => x !== v);
+        guardarLocal();
+        renderCatalogoGestion();
+        eliminarValorCatalogoServidor(tipo, v);
+      });
+      cont.appendChild(chip);
+    });
+  }
+
+  document.getElementById('catGestionTipo').addEventListener('change', renderCatalogoGestion);
+
+  document.getElementById('catGestionAgregar').addEventListener('click', async () => {
+    const tipo = document.getElementById('catGestionTipo').value;
+    const input = document.getElementById('catGestionNuevo');
+    const valor = input.value.trim();
+    if(!valor){ toast('Escribe un valor primero', 'error'); return; }
+    await agregarValorCatalogo(tipo, valor);
+    input.value = '';
+    renderCatalogoGestion();
+    toast('Agregado al catálogo de ' + ETIQUETAS_CATALOGO[tipo], 'exito');
+  });
+
   function poblarFiltroUbicacion(){
     const select = document.getElementById('filtroUbicacion');
     const valorPrevio = select.value;
@@ -749,6 +831,7 @@
       Vencimiento: document.getElementById('f-vencimiento').value,
       Notificado: false,
       UltimaActualizacion: new Date().toISOString(),
+      ActualizadoPor: config.usuario || '',
       _sincronizado: false
     };
 
@@ -926,14 +1009,17 @@
   // Configuración
   // ---------------------------------------------------------------------
   function renderConfig(){
+    document.getElementById('cfg-usuario').value = config.usuario || '';
     document.getElementById('cfg-url').value = config.url || '';
     document.getElementById('cfg-correos').value = config.correos || '';
     const pendientes = items.filter(it => !it._sincronizado).length;
     document.getElementById('resumenPendientes').textContent =
       pendientes === 0 ? 'Todo sincronizado.' : pendientes + ' ítem(s) guardados localmente sin confirmar en el Sheet.';
+    renderCatalogoGestion();
   }
 
   document.getElementById('btnGuardarConfig').addEventListener('click', async () => {
+    config.usuario = document.getElementById('cfg-usuario').value.trim();
     config.url = document.getElementById('cfg-url').value.trim();
     config.correos = document.getElementById('cfg-correos').value.trim();
     guardarLocal();
