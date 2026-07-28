@@ -166,6 +166,15 @@
   .detalle-trabajador-header h2{margin:0 0 2px; font-size:17px;}
   .detalle-trabajador-header .sub{font-size:12.5px; color:var(--text-mute); line-height:1.5;}
 
+  .linea-movimiento{background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 11px; margin-bottom:10px;}
+  .linea-movimiento .linea-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;}
+  .linea-movimiento .linea-header span{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:var(--text-mute);}
+  .btn-quitar-linea{background:var(--red-bg); color:var(--red); border:none; border-radius:5px; padding:4px 9px; font-size:11px; font-weight:700; cursor:pointer;}
+  .linea-movimiento select, .linea-movimiento input{margin-bottom:8px;}
+  .linea-movimiento label{margin:8px 0 4px;}
+  .mov-fila-acciones{display:flex; align-items:center; gap:6px;}
+  .btn-borrar-mov{background:none; border:none; color:var(--red); font-size:15px; cursor:pointer; padding:2px 4px;}
+
   /* ---- Detalle ---- */
   .detalle-header{margin-bottom:6px;}
   .detalle-header h2{margin:0 0 2px; font-size:19px; font-weight:800;}
@@ -531,31 +540,17 @@
         <label for="mf-tipo-devolucion">Devolución</label>
       </div>
 
-      <label>Ítem de inventario</label>
-      <select id="mf-item"></select>
-      <div class="ayuda" id="mf-stock-info"></div>
-
-      <label>Cantidad</label>
-      <input type="number" id="mf-cantidad" min="1" step="1" value="1">
-
-      <div id="mf-bloque-devolucion" style="display:none;">
-        <label>Motivo de la devolución</label>
-        <select id="mf-motivo">
-          <option value="Defectuoso">Defectuoso</option>
-          <option value="Talla incorrecta">Talla incorrecta</option>
-          <option value="Fin de vida útil">Fin de vida útil</option>
-          <option value="Otro">Otro</option>
-        </select>
-        <label style="display:flex; align-items:center; gap:8px; margin-top:12px;">
-          <input type="checkbox" id="mf-repone-stock" style="width:auto;">
-          ¿Vuelve a stock utilizable?
-        </label>
+      <label>Ítems de esta entrega</label>
+      <div id="mf-lineas"></div>
+      <div class="fila-btns">
+        <button class="btn secundario ancho" type="button" id="btnAgregarLinea">+ Agregar otro ítem</button>
       </div>
 
       <label>Fecha</label>
       <input type="date" id="mf-fecha">
 
       <label>Firma de recibo conforme</label>
+      <div class="ayuda">Una sola firma cubre todos los ítems agregados arriba.</div>
       <div class="firma-wrap">
         <canvas id="firmaCanvas"></canvas>
       </div>
@@ -1812,6 +1807,30 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return dv === dvEsperado;
   }
 
+  /** Solo la FORMA (dígitos + dígito o K final) — esto sí bloquea, porque un
+   *  valor que ni siquiera parece RUT (letras, vacío) no tiene arreglo. El
+   *  checksum (validarRutCliente) en cambio es solo una advertencia: bloquearlo
+   *  duro dejaba sin forma de guardar un RUT real mal tecleado por la persona,
+   *  o de cargar un RUT de prueba para probar la app. */
+  function formatoRutClienteValido(rutCompleto){
+    if(!rutCompleto) return false;
+    const limpio = String(rutCompleto).replace(/[.\-\s]/g, '').toUpperCase();
+    return /^[0-9]{6,9}[0-9K]$/.test(limpio);
+  }
+
+  /** true si se puede seguir adelante: formato válido siempre exigido: el
+   *  checksum es solo advertencia con opción de continuar igual. */
+  function confirmarRutOAvisar(rut, etiqueta){
+    if(!formatoRutClienteValido(rut)){
+      toast(etiqueta + ': el RUT debe ser solo dígitos terminados en número o K', 'error');
+      return false;
+    }
+    if(!validarRutCliente(rut)){
+      return confirm('El dígito verificador de "' + rut + '" no calza con el cálculo esperado.\n¿Guardarlo de todas formas?');
+    }
+    return true;
+  }
+
   function poblarSelectRazonSocial(idSelect, valorActual){
     const select = document.getElementById(idSelect);
     const valorPrevio = valorActual !== undefined ? valorActual : select.value;
@@ -1892,7 +1911,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   document.getElementById('btnGuardarRazonSocial').addEventListener('click', async () => {
     const rut = document.getElementById('rs-rut').value.trim();
     const nombre = document.getElementById('rs-nombre').value.trim();
-    if(!validarRutCliente(rut)){ toast('RUT de empresa inválido', 'error'); return; }
+    if(!confirmarRutOAvisar(rut, 'Razón social')) return;
     if(!nombre){ toast('Falta la razón social', 'error'); return; }
     if(!config.url){ toast('Necesitas conexión para guardar esto', 'error'); return; }
     try{
@@ -2061,10 +2080,30 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           <div class="mov-sub">${escapar(m.Folio)} · ${escapar(m.Fecha)} · ${esEntrega ? 'Entrega' : ('Devolución' + (m.Motivo ? ' (' + escapar(m.Motivo) + ')' : ''))}</div>
         </div>
         <div class="mov-cantidad">${esEntrega ? '-' : '+'}${Number(m.Cantidad)||0}</div>
-        ${m.LinkActa ? `<a href="${escapar(m.LinkActa)}" target="_blank" rel="noopener">Acta</a>` : ''}
+        <div class="mov-fila-acciones">
+          ${m.FirmaBase64 ? `<img src="${escapar(m.FirmaBase64)}" alt="Firma" style="height:22px; border:1px solid var(--border); border-radius:3px; background:#fff;">` : ''}
+          <button class="btn-borrar-mov" title="Eliminar movimiento">✕</button>
+        </div>
       `;
+      div.querySelector('.btn-borrar-mov').addEventListener('click', () => eliminarMovimiento(m.ID));
       cont.appendChild(div);
     });
+  }
+
+  async function eliminarMovimiento(idMovimiento){
+    if(!confirm('¿Eliminar este movimiento? Se revierte su efecto en el stock. Esta acción no se puede deshacer.')) return;
+    if(!config.url){ toast('Necesitas conexión para esto', 'error'); return; }
+    try{
+      const resp = await fetch(config.url, { method:'POST', body: JSON.stringify({ accion:'eliminarMovimiento', id: idMovimiento }) });
+      const data = await resp.json();
+      if(!data.ok) throw new Error(data.error || 'error desconocido');
+      await refrescarDesdeSheet();
+      await actualizarRegistroPDFTrabajador(rutTrabajadorActual);
+      abrirTrabajadorDetalle(rutTrabajadorActual);
+      toast('Movimiento eliminado y stock revertido', 'exito');
+    }catch(e){
+      toast('No se pudo eliminar: ' + e.message, 'error');
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -2116,7 +2155,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const cargo = document.getElementById('tf-cargo').value.trim();
     const nombreCentro = document.getElementById('tf-centro').value;
 
-    if(!validarRutCliente(rut)){ toast('RUT de trabajador inválido', 'error'); return; }
+    if(!confirmarRutOAvisar(rut, 'Trabajador')) return;
     if(!nombre){ toast('Falta el nombre', 'error'); return; }
     if(!config.url){ toast('Necesitas conexión para guardar esto', 'error'); return; }
 
@@ -2159,6 +2198,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   const firmaCtx = firmaCanvas.getContext('2d');
   let firmaColorActual = '#1a3fae'; // azul por defecto (convención chilena: distingue original de fotocopia)
   let firmaTrazando = false;
+  let firmaPuntoAnterior = null; // el punto antes del último (para encadenar los puntos medios)
   let firmaUltimoPunto = null;
   let firmaUltimoAncho = 2.2;
   let firmaTieneContenido = false;
@@ -2181,8 +2221,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   }
   function iniciarTrazoFirma(evento){
     firmaTrazando = true;
-    firmaUltimoPunto = posicionRelativaFirma(evento);
+    const p = posicionRelativaFirma(evento);
+    firmaPuntoAnterior = p;
+    firmaUltimoPunto = p;
     firmaTieneContenido = true;
+    // Dibuja un punto (por si el trazo es solo un tap, ej. el punto de una "í")
+    firmaCtx.beginPath();
+    firmaCtx.arc(p.x, p.y, firmaUltimoAncho / 2, 0, Math.PI * 2);
+    firmaCtx.fillStyle = firmaColorActual;
+    firmaCtx.fill();
   }
   function continuarTrazoFirma(evento){
     if(!firmaTrazando) return;
@@ -2195,19 +2242,24 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const anchoObjetivo = Math.max(1.2, Math.min(4.2, 3.4 - velocidad * 6));
     const ancho = firmaUltimoAncho * 0.7 + anchoObjetivo * 0.3;
 
+    // Bug corregido: cada trazo debe partir del punto medio ANTERIOR (no del
+    // punto crudo) y terminar en el punto medio ACTUAL — si no, cada curva
+    // queda desconectada de la anterior y la firma sale punteada.
+    const medioAnterior = { x: (firmaPuntoAnterior.x + firmaUltimoPunto.x) / 2, y: (firmaPuntoAnterior.y + firmaUltimoPunto.y) / 2 };
+    const medioActual = { x: (firmaUltimoPunto.x + actual.x) / 2, y: (firmaUltimoPunto.y + actual.y) / 2 };
+
     firmaCtx.strokeStyle = firmaColorActual;
     firmaCtx.lineWidth = ancho;
     firmaCtx.beginPath();
-    firmaCtx.moveTo(firmaUltimoPunto.x, firmaUltimoPunto.y);
-    const xMedio = (firmaUltimoPunto.x + actual.x) / 2;
-    const yMedio = (firmaUltimoPunto.y + actual.y) / 2;
-    firmaCtx.quadraticCurveTo(firmaUltimoPunto.x, firmaUltimoPunto.y, xMedio, yMedio);
+    firmaCtx.moveTo(medioAnterior.x, medioAnterior.y);
+    firmaCtx.quadraticCurveTo(firmaUltimoPunto.x, firmaUltimoPunto.y, medioActual.x, medioActual.y);
     firmaCtx.stroke();
 
     firmaUltimoAncho = ancho;
+    firmaPuntoAnterior = firmaUltimoPunto;
     firmaUltimoPunto = actual;
   }
-  function terminarTrazoFirma(){ firmaTrazando = false; firmaUltimoPunto = null; }
+  function terminarTrazoFirma(){ firmaTrazando = false; firmaPuntoAnterior = null; firmaUltimoPunto = null; }
 
   firmaCanvas.addEventListener('pointerdown', (e) => { firmaCanvas.setPointerCapture(e.pointerId); iniciarTrazoFirma(e); });
   firmaCanvas.addEventListener('pointermove', continuarTrazoFirma);
@@ -2235,22 +2287,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function obtenerFirmaDataURL(){ return firmaCanvas.toDataURL('image/png'); }
 
   // ---------------------------------------------------------------------
-  // Módulo Entregas: formulario de movimiento (entrega/devolución)
+  // Módulo Entregas: formulario de movimiento (entrega/devolución, varios ítems)
   // ---------------------------------------------------------------------
   function prepararMovimientoForm(){
     document.getElementById('mf-tipo-entrega').checked = true;
-    document.getElementById('mf-bloque-devolucion').style.display = 'none';
-    document.getElementById('mf-cantidad').value = 1;
-    document.getElementById('mf-motivo').value = 'Defectuoso';
-    document.getElementById('mf-repone-stock').checked = false;
     document.getElementById('mf-fecha').value = new Date().toISOString().slice(0,10);
-    poblarSelectItemMovimiento();
-    actualizarInfoStockMovimiento();
+    document.getElementById('mf-lineas').innerHTML = '';
+    crearLineaMovimiento();
     limpiarFirma();
   }
 
-  function poblarSelectItemMovimiento(){
-    const select = document.getElementById('mf-item');
+  function poblarSelectItemEnElemento(select, valorActual){
     select.innerHTML = '<option value="">Selecciona…</option>';
     items.slice().sort((a,b) => (a.Item||'').localeCompare(b.Item||'')).forEach(it => {
       const opt = document.createElement('option');
@@ -2259,18 +2306,66 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       opt.textContent = (it.Item||'') + talla + ' (' + (it['Marca/Detalle']||'—') + ') · stock: ' + (Number(it.Cantidad)||0);
       select.appendChild(opt);
     });
+    select.value = valorActual || '';
   }
 
-  document.getElementById('mf-item').addEventListener('change', actualizarInfoStockMovimiento);
-  function actualizarInfoStockMovimiento(){
-    const id = document.getElementById('mf-item').value;
-    const item = items.find(i => i.ID === id);
-    document.getElementById('mf-stock-info').textContent = item ? ('Stock disponible: ' + (Number(item.Cantidad)||0) + ' ' + (item.Formato||'unid.')) : '';
+  /** Cada línea es un ítem+cantidad(+motivo/reponeStock si es devolución)
+   *  dentro de una misma entrega — todas comparten una sola firma al final. */
+  function crearLineaMovimiento(){
+    const div = document.createElement('div');
+    div.className = 'linea-movimiento';
+    div.innerHTML = `
+      <div class="linea-header">
+        <span>Ítem</span>
+        <button type="button" class="btn-quitar-linea">Quitar</button>
+      </div>
+      <select class="linea-item"></select>
+      <div class="ayuda linea-stock-info"></div>
+      <label>Cantidad</label>
+      <input type="number" class="linea-cantidad" min="1" step="1" value="1">
+      <div class="linea-bloque-devolucion" style="display:none;">
+        <label>Motivo de la devolución</label>
+        <select class="linea-motivo">
+          <option value="Defectuoso">Defectuoso</option>
+          <option value="Talla incorrecta">Talla incorrecta</option>
+          <option value="Fin de vida útil">Fin de vida útil</option>
+          <option value="Otro">Otro</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:8px;">
+          <input type="checkbox" class="linea-repone-stock" style="width:auto;">
+          ¿Vuelve a stock utilizable?
+        </label>
+      </div>
+    `;
+
+    const selectItem = div.querySelector('.linea-item');
+    poblarSelectItemEnElemento(selectItem);
+    const infoStock = div.querySelector('.linea-stock-info');
+    function actualizarInfo(){
+      const item = items.find(i => i.ID === selectItem.value);
+      infoStock.textContent = item ? ('Stock disponible: ' + (Number(item.Cantidad)||0) + ' ' + (item.Formato||'unid.')) : '';
+    }
+    selectItem.addEventListener('change', actualizarInfo);
+    actualizarInfo();
+
+    const esDevolucion = document.getElementById('mf-tipo-devolucion').checked;
+    div.querySelector('.linea-bloque-devolucion').style.display = esDevolucion ? 'block' : 'none';
+
+    div.querySelector('.btn-quitar-linea').addEventListener('click', () => {
+      const lineas = document.querySelectorAll('#mf-lineas .linea-movimiento');
+      if(lineas.length <= 1){ toast('Debe quedar al menos un ítem', 'error'); return; }
+      div.remove();
+    });
+
+    document.getElementById('mf-lineas').appendChild(div);
+    return div;
   }
+
+  document.getElementById('btnAgregarLinea').addEventListener('click', () => crearLineaMovimiento());
 
   document.querySelectorAll('input[name="mf-tipo"]').forEach(r => r.addEventListener('change', () => {
     const esDevolucion = document.getElementById('mf-tipo-devolucion').checked;
-    document.getElementById('mf-bloque-devolucion').style.display = esDevolucion ? 'block' : 'none';
+    document.querySelectorAll('#mf-lineas .linea-bloque-devolucion').forEach(b => { b.style.display = esDevolucion ? 'block' : 'none'; });
   }));
 
   document.getElementById('btnNuevoMovimiento').addEventListener('click', () => {
@@ -2283,99 +2378,156 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return String(nombre||'Sin_Nombre').replace(/[\\/:*?"<>|]/g, '-').trim() || 'Sin_Nombre';
   }
 
-  /** Acta individual firmada de ESE movimiento — se genera con la firma
-   *  fresca del canvas, evitando tener que recuperarla después desde Drive. */
-  function generarActaPDF(trabajador, ctx, item, movInfo, firmaDataURL){
+  /** Registro por trabajador, formato horizontal calcado del acta física de
+   *  DAP: Folio/Fecha/Descripción/Talla y Cantidad/Tipo/Firma. La firma de
+   *  cada movimiento se guarda como base64 en la propia fila (no en Drive),
+   *  así se reincrusta acá sin ningún fetch externo ni problema de CORS. */
+  function generarRegistroAcumuladoPDF(trabajador, ctx, movimientosDelTrabajador){
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit:'mm', format:'a4' });
-    let y = 20;
-    doc.setFontSize(14); doc.setFont(undefined,'bold');
-    doc.text('Acta de ' + (movInfo.tipoMovimiento === 'Entrega' ? 'Entrega' : 'Devolución') + ' de EPP', 15, y);
-    y += 10;
-    doc.setFontSize(10); doc.setFont(undefined,'normal');
-    doc.text('Razón social: ' + (ctx.razonSocial||'—'), 15, y); y += 6;
-    doc.text('Centro de trabajo: ' + (ctx.nombreCentro||'—'), 15, y); y += 8;
-    doc.text('Trabajador: ' + (trabajador.Nombre||'—'), 15, y); y += 6;
-    doc.text('RUT: ' + (trabajador.RUT_Trabajador||'—') + '   Cargo: ' + (trabajador.Cargo||'—'), 15, y); y += 10;
+    const doc = new jsPDF({ unit:'mm', format:'a4', orientation:'landscape' });
+    const anchoPagina = 297, altoPagina = 210, margen = 10;
+    const anchoUtil = anchoPagina - margen*2;
 
-    doc.setFont(undefined,'bold'); doc.text('Detalle', 15, y); doc.setFont(undefined,'normal'); y += 7;
-    doc.text('Ítem: ' + (item.Item||'—') + (item.Talla ? ' — Talla ' + item.Talla : ''), 15, y); y += 6;
-    doc.text('Marca/Detalle: ' + (item['Marca/Detalle']||'—'), 15, y); y += 6;
-    doc.text('Cantidad: ' + movInfo.cantidad, 15, y); y += 6;
-    doc.text('Fecha: ' + movInfo.fecha, 15, y); y += 6;
-    if(movInfo.tipoMovimiento === 'Devolucion'){
-      doc.text('Motivo: ' + (movInfo.motivo||'—'), 15, y); y += 6;
-    }
+    let y = margen;
+    doc.setFontSize(13); doc.setFont(undefined,'bold');
+    doc.text('REGISTRO DE ENTREGA DE VESTUARIO TÉCNICO/EPP', margen, y+4);
+    doc.setFontSize(8); doc.setFont(undefined,'normal');
+    doc.text('Fecha emisión: ' + new Date().toLocaleDateString('es-CL'), anchoPagina-margen-55, y);
+    doc.text('Página 1 de 1', anchoPagina-margen-55, y+5);
+    y += 10;
+
+    doc.setFontSize(9); doc.setFont(undefined,'bold');
+    doc.text((ctx.razonSocial||'—').toUpperCase(), margen, y); y += 5;
+    doc.setFont(undefined,'normal');
+    doc.text('Centro de trabajo: ' + (ctx.nombreCentro||'—'), margen, y); y += 7;
+
+    doc.setFont(undefined,'bold'); doc.text('NOMBRE:', margen, y);
+    doc.setFont(undefined,'normal'); doc.text(trabajador.Nombre||'—', margen+18, y);
+    doc.setFont(undefined,'bold'); doc.text('RUN:', margen+110, y);
+    doc.setFont(undefined,'normal'); doc.text(trabajador.RUT_Trabajador||'—', margen+120, y);
+    doc.setFont(undefined,'bold'); doc.text('PUESTO:', margen+160, y);
+    doc.setFont(undefined,'normal'); doc.text(trabajador.Cargo||'—', margen+176, y);
     y += 8;
 
-    doc.setFont(undefined,'bold'); doc.text('Firma de recibo conforme', 15, y); y += 4;
-    doc.addImage(firmaDataURL, 'PNG', 15, y, 80, 35);
-    y += 40;
-    doc.setFont(undefined,'normal'); doc.setFontSize(9);
-    doc.text('Generado: ' + new Date().toLocaleString('es-CL'), 15, y);
+    const colX = { folio: margen, fecha: margen+16, desc: margen+38, tallaCant: margen+150, tipo: margen+180, firma: margen+205 };
+
+    doc.setFillColor(230,230,230);
+    doc.rect(margen, y, anchoUtil, 7, 'F');
+    doc.setFont(undefined,'bold'); doc.setFontSize(8);
+    doc.text('Folio', colX.folio+1, y+5);
+    doc.text('Fecha', colX.fecha+1, y+5);
+    doc.text('Descripción', colX.desc+1, y+5);
+    doc.text('Talla y Cant.', colX.tallaCant+1, y+5);
+    doc.text('Tipo', colX.tipo+1, y+5);
+    doc.text('Firma', colX.firma+1, y+5);
+    y += 7;
+
+    const alturaFila = 16;
+    doc.setFont(undefined,'normal'); doc.setFontSize(8);
+    const ordenados = movimientosDelTrabajador.slice().sort((a,b) => (a.Fecha||'').localeCompare(b.Fecha||''));
+
+    ordenados.forEach(m => {
+      if(y + alturaFila > altoPagina - margen - 15){
+        doc.addPage('a4', 'landscape');
+        y = margen;
+      }
+      const item = items.find(i => i.ID === m.IdItemInventario);
+      const nombreItem = item ? (item.Item + (item['Marca/Detalle'] ? ' - ' + item['Marca/Detalle'] : '')) : '(ítem eliminado)';
+      const tallaCant = (item && item.Talla ? item.Talla : '—') + ' / ' + m.Cantidad;
+      const tipoTexto = m.TipoMovimiento === 'Entrega' ? 'Entrega' : ('Devol.: ' + (m.Motivo||''));
+
+      doc.setDrawColor(180,180,180);
+      doc.rect(margen, y, anchoUtil, alturaFila);
+      [colX.fecha, colX.desc, colX.tallaCant, colX.tipo, colX.firma].forEach(x => doc.line(x, y, x, y+alturaFila));
+
+      doc.text(String(m.Folio||''), colX.folio+1, y+6);
+      doc.text(String(m.Fecha||''), colX.fecha+1, y+6);
+      doc.text(nombreItem.slice(0,55), colX.desc+1, y+6);
+      doc.text(tallaCant, colX.tallaCant+1, y+6);
+      doc.text(tipoTexto.slice(0,20), colX.tipo+1, y+6);
+
+      if(m.FirmaBase64){
+        try{
+          const altoFirma = alturaFila - 4;
+          const anchoFirma = Math.min(altoFirma * 1.875, anchoPagina - margen - colX.firma - 2);
+          doc.addImage(m.FirmaBase64, 'PNG', colX.firma+1, y+2, anchoFirma, altoFirma);
+        }catch(e){ doc.text('(firma no disp.)', colX.firma+1, y+9); }
+      }
+      y += alturaFila;
+    });
+
+    if(ordenados.length === 0){
+      doc.rect(margen, y, anchoUtil, alturaFila);
+      doc.text('Sin movimientos registrados todavía.', margen+2, y+9);
+      y += alturaFila;
+    }
+
+    y += 10;
+    doc.setFont(undefined,'bold'); doc.text('Entregado por:', margen, y);
+    doc.setFont(undefined,'normal'); doc.text(config.usuario || '—', margen+28, y);
+    doc.text('Fecha: ' + new Date().toLocaleDateString('es-CL'), margen+120, y);
 
     return doc.output('datauristring').split(',')[1]; // base64 puro
   }
 
-  /** PDF acumulativo del trabajador: tabla-resumen (sin firmas embebidas —
-   *  cada movimiento ya tiene su propia acta firmada e individual). */
-  function generarRegistroAcumuladoPDF(trabajador, ctx, movimientosDelTrabajador){
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit:'mm', format:'a4' });
-    let y = 20;
-    doc.setFontSize(14); doc.setFont(undefined,'bold');
-    doc.text('Registro de entregas y devoluciones de EPP', 15, y); y += 10;
-    doc.setFontSize(10); doc.setFont(undefined,'normal');
-    doc.text('Razón social: ' + (ctx.razonSocial||'—'), 15, y); y += 6;
-    doc.text('Centro de trabajo: ' + (ctx.nombreCentro||'—'), 15, y); y += 8;
-    doc.text('Trabajador: ' + (trabajador.Nombre||'—') + '   RUT: ' + (trabajador.RUT_Trabajador||'—'), 15, y); y += 6;
-    doc.text('Cargo: ' + (trabajador.Cargo||'—'), 15, y); y += 10;
-
-    doc.setFont(undefined,'bold');
-    doc.text('Folio', 15, y); doc.text('Fecha', 40, y); doc.text('Ítem', 62, y); doc.text('Cant.', 130, y); doc.text('Tipo', 145, y); doc.text('Motivo', 168, y);
-    y += 5;
-    doc.setLineWidth(0.2); doc.line(15, y, 195, y); y += 5;
-    doc.setFont(undefined,'normal'); doc.setFontSize(9);
-
-    const ordenados = movimientosDelTrabajador.slice().sort((a,b) => (a.Fecha||'').localeCompare(b.Fecha||''));
-    ordenados.forEach(m => {
-      if(y > 275){ doc.addPage(); y = 20; }
-      const item = items.find(i => i.ID === m.IdItemInventario);
-      const nombreItem = (item ? item.Item : '(eliminado)') + (item && item.Talla ? ' ' + item.Talla : '');
-      doc.text(String(m.Folio||''), 15, y);
-      doc.text(String(m.Fecha||''), 40, y);
-      doc.text(nombreItem.slice(0, 32), 62, y);
-      doc.text(String(m.Cantidad||''), 130, y);
-      doc.text(m.TipoMovimiento === 'Entrega' ? 'Entrega' : 'Devol.', 145, y);
-      doc.text(String(m.Motivo||'').slice(0,18), 168, y);
-      y += 6;
-    });
-    if(ordenados.length === 0){ doc.text('Sin movimientos registrados.', 15, y); y += 6; }
-
-    y += 6; doc.setFontSize(8);
-    doc.text('Cada movimiento tiene su propia acta firmada (ver enlaces individuales en la app).', 15, y);
-    doc.text('Generado: ' + new Date().toLocaleString('es-CL'), 15, y+5);
-
-    return doc.output('datauristring').split(',')[1];
+  /** Regenera y sube el registro PDF de un trabajador (misma función que usa
+   *  tanto el botón manual como el guardado automático tras cada movimiento). */
+  async function actualizarRegistroPDFTrabajador(rutTrabajador){
+    const trabajador = trabajadores.find(t => t.RUT_Trabajador === rutTrabajador);
+    if(!trabajador) return { ok:false, error:'Trabajador no encontrado' };
+    if(!config.url) return { ok:false, error:'Sin conexión' };
+    try{
+      const ctx = contextoDeTrabajador(trabajador);
+      const propios = movimientos.filter(m => m.RUT_Trabajador === rutTrabajador);
+      const base64 = generarRegistroAcumuladoPDF(trabajador, ctx, propios);
+      const nombreArchivo = sanearNombreArchivoCliente(trabajador.Nombre) + '_' + trabajador.RUT_Trabajador + '.pdf';
+      const resp = await fetch(config.url, {
+        method:'POST',
+        body: JSON.stringify({ accion:'subirRegistroPDF', rutTrabajador, nombreArchivo, base64 })
+      });
+      const data = await resp.json();
+      if(!data.ok) throw new Error(data.error || 'error desconocido');
+      trabajador.LinkRegistroPDF = data.link;
+      guardarLocal();
+      return { ok:true };
+    }catch(e){
+      return { ok:false, error:e.message };
+    }
   }
 
   document.getElementById('btnGuardarMovimiento').addEventListener('click', async () => {
     const btn = document.getElementById('btnGuardarMovimiento');
     if(btn.disabled) return;
 
-    const idItem = document.getElementById('mf-item').value;
-    const item = items.find(i => i.ID === idItem);
     const tipoMovimiento = document.getElementById('mf-tipo-devolucion').checked ? 'Devolucion' : 'Entrega';
-    const cantidad = Math.max(0, Number(document.getElementById('mf-cantidad').value) || 0);
-    const motivo = tipoMovimiento === 'Devolucion' ? document.getElementById('mf-motivo').value : '';
-    const reponeStock = tipoMovimiento === 'Devolucion' ? document.getElementById('mf-repone-stock').checked : false;
     const fecha = document.getElementById('mf-fecha').value || new Date().toISOString().slice(0,10);
 
-    if(!item){ toast('Selecciona un ítem de inventario', 'error'); return; }
-    if(cantidad <= 0){ toast('La cantidad debe ser mayor a 0', 'error'); return; }
-    if(tipoMovimiento === 'Entrega' && cantidad > (Number(item.Cantidad)||0)){
-      toast('No hay stock suficiente: quedan ' + (Number(item.Cantidad)||0), 'error'); return;
+    const elementosLinea = Array.from(document.querySelectorAll('#mf-lineas .linea-movimiento'));
+    const lineas = elementosLinea.map(el => ({
+      idItem: el.querySelector('.linea-item').value,
+      cantidad: Math.max(0, Number(el.querySelector('.linea-cantidad').value) || 0),
+      motivo: tipoMovimiento === 'Devolucion' ? el.querySelector('.linea-motivo').value : '',
+      reponeStock: tipoMovimiento === 'Devolucion' ? el.querySelector('.linea-repone-stock').checked : false
+    }));
+
+    if(lineas.some(l => !l.idItem)){ toast('Selecciona un ítem en cada línea', 'error'); return; }
+    if(lineas.some(l => l.cantidad <= 0)){ toast('La cantidad debe ser mayor a 0 en cada línea', 'error'); return; }
+
+    // Si el mismo ítem aparece en varias líneas, se valida la suma contra el
+    // stock actual (dos líneas de 3 c/u con solo 4 en stock no debe pasar).
+    if(tipoMovimiento === 'Entrega'){
+      const totalesPorItem = {};
+      lineas.forEach(l => { totalesPorItem[l.idItem] = (totalesPorItem[l.idItem]||0) + l.cantidad; });
+      for(const idItem in totalesPorItem){
+        const item = items.find(i => i.ID === idItem);
+        const stockActual = item ? (Number(item.Cantidad)||0) : 0;
+        if(totalesPorItem[idItem] > stockActual){
+          toast('Stock insuficiente para "' + (item ? item.Item : idItem) + '": quedan ' + stockActual, 'error');
+          return;
+        }
+      }
     }
+
     if(!hayFirma()){ toast('Falta la firma de recibo conforme', 'error'); return; }
     if(!config.url){ toast('Se necesita conexión para registrar un movimiento (valida stock en el servidor)', 'error'); return; }
 
@@ -2384,33 +2536,42 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
     btn.disabled = true;
     try{
-      const ctx = contextoDeTrabajador(trabajador);
       const firmaDataURL = obtenerFirmaDataURL();
-      const actaBase64 = generarActaPDF(trabajador, ctx, item, { tipoMovimiento, cantidad, motivo, fecha }, firmaDataURL);
-      const nombreActa = 'Acta_' + (trabajador.RUT_Trabajador||'').replace(/[^0-9Kk]/g,'') + '_' + Date.now() + '.pdf';
+      let exitos = 0;
+      let primerError = '';
 
-      const respActa = await fetch(config.url, {
-        method:'POST',
-        body: JSON.stringify({ accion:'subirActaMovimiento', rutTrabajador: rutTrabajadorActual, nombreArchivo: nombreActa, base64: actaBase64 })
-      });
-      const dataActa = await respActa.json();
-      if(!dataActa.ok) throw new Error(dataActa.error || 'no se pudo subir el acta firmada');
-
-      const respMov = await fetch(config.url, {
-        method:'POST',
-        body: JSON.stringify({
-          accion:'registrarMovimiento', rutTrabajador: rutTrabajadorActual, idItemInventario: idItem,
-          cantidad, tipoMovimiento, motivo, reponeStock, fecha, actualizadoPor: config.usuario || '',
-          linkActa: dataActa.link
-        })
-      });
-      const dataMov = await respMov.json();
-      if(!dataMov.ok){ toast(dataMov.error || 'no se pudo registrar el movimiento', 'error'); return; }
+      for(const linea of lineas){
+        const resp = await fetch(config.url, {
+          method:'POST',
+          body: JSON.stringify({
+            accion:'registrarMovimiento', rutTrabajador: rutTrabajadorActual, idItemInventario: linea.idItem,
+            cantidad: linea.cantidad, tipoMovimiento, motivo: linea.motivo, reponeStock: linea.reponeStock,
+            fecha, actualizadoPor: config.usuario || '', firmaBase64: firmaDataURL
+          })
+        });
+        const data = await resp.json();
+        if(data.ok) exitos++;
+        else { primerError = primerError || data.error || 'error desconocido'; break; } // se detiene ante el primer rechazo
+      }
 
       await refrescarDesdeSheet();
-      toast('Movimiento ' + dataMov.folio + ' registrado', 'exito');
-      abrirTrabajadorDetalle(rutTrabajadorActual);
-      mostrarVista('trabajador-detalle');
+
+      if(exitos === lineas.length){
+        // Auto-sube el registro PDF: no depende de que el usuario recuerde
+        // apretar el botón manual.
+        const resultadoPdf = await actualizarRegistroPDFTrabajador(rutTrabajadorActual);
+        toast(exitos + ' ítem(s) registrados' + (resultadoPdf.ok ? '' : ' (el PDF no se pudo actualizar: ' + resultadoPdf.error + ')'),
+          resultadoPdf.ok ? 'exito' : 'error');
+        abrirTrabajadorDetalle(rutTrabajadorActual);
+        mostrarVista('trabajador-detalle');
+      } else {
+        toast(exitos + ' de ' + lineas.length + ' ítem(s) registrados. Se detuvo en: ' + primerError, 'error');
+        if(exitos > 0){
+          await actualizarRegistroPDFTrabajador(rutTrabajadorActual);
+          abrirTrabajadorDetalle(rutTrabajadorActual);
+          mostrarVista('trabajador-detalle');
+        }
+      }
     }catch(e){
       toast('No se pudo registrar: ' + e.message, 'error');
     }finally{
@@ -2421,33 +2582,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   document.getElementById('btnActualizarRegistroPDF').addEventListener('click', async () => {
     const btn = document.getElementById('btnActualizarRegistroPDF');
     if(btn.disabled) return;
-    const trabajador = trabajadores.find(t => t.RUT_Trabajador === rutTrabajadorActual);
-    if(!trabajador){ toast('Trabajador no encontrado', 'error'); return; }
-    if(!config.url){ toast('Necesitas conexión para esto', 'error'); return; }
-
     btn.disabled = true;
-    try{
-      const ctx = contextoDeTrabajador(trabajador);
-      const propios = movimientos.filter(m => m.RUT_Trabajador === rutTrabajadorActual);
-      const base64 = generarRegistroAcumuladoPDF(trabajador, ctx, propios);
-      const nombreArchivo = sanearNombreArchivoCliente(trabajador.Nombre) + '_' + trabajador.RUT_Trabajador + '.pdf';
-
-      const resp = await fetch(config.url, {
-        method:'POST',
-        body: JSON.stringify({ accion:'subirRegistroPDF', rutTrabajador: rutTrabajadorActual, nombreArchivo, base64 })
-      });
-      const data = await resp.json();
-      if(!data.ok) throw new Error(data.error || 'error desconocido');
-
-      trabajador.LinkRegistroPDF = data.link;
-      guardarLocal();
-      abrirTrabajadorDetalle(rutTrabajadorActual);
-      toast('Registro PDF actualizado', 'exito');
-    }catch(e){
-      toast('No se pudo actualizar el registro: ' + e.message, 'error');
-    }finally{
-      btn.disabled = false;
-    }
+    const r = await actualizarRegistroPDFTrabajador(rutTrabajadorActual);
+    if(r.ok){ abrirTrabajadorDetalle(rutTrabajadorActual); toast('Registro PDF actualizado', 'exito'); }
+    else toast('No se pudo actualizar el registro: ' + r.error, 'error');
+    btn.disabled = false;
   });
 
   // ---------------------------------------------------------------------
